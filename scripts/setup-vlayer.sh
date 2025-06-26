@@ -7,7 +7,7 @@ set -e
 ENV_FILE="$HOME/Vlayer/.env"
 
 # Default values for chain and RPC
-DEFAULT_CHAIN_NAME="BaseMainnet"
+DEFAULT_CHAIN_NAME="base"
 DEFAULT_JSON_RPC_URL="https://base-rpc.publicnode.com"
 
 # Function to check and upgrade Ubuntu to 24.04
