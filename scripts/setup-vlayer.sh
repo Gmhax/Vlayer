@@ -7,8 +7,8 @@ set -e
 ENV_FILE="$HOME/Vlayer/.env"
 
 # Default values for chain and RPC
-DEFAULT_CHAIN_NAME="optimismSepolia"
-DEFAULT_JSON_RPC_URL="https://sepolia.optimism.io"
+DEFAULT_CHAIN_NAME="BaseMainnet"
+DEFAULT_JSON_RPC_URL="https://base-rpc.publicnode.com"
 
 # Function to check and upgrade Ubuntu to 24.04
 upgrade_ubuntu() {
