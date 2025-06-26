@@ -11,8 +11,8 @@ vlayer provides tools and infrastructure that give smart contracts super powers 
 - Go to Account Bind your Airdrop Wallet (EVM)
 
 # Mainnet TASK!
-➡️ Developer Task!
-➡️ Need Real Funds Base ETH or OP
+- Developer Task!
+- Need Real Funds Base ETH 
 
 
 ![image](https://github.com/user-attachments/assets/4e5d52dd-16a4-4fac-8ff3-0ff6f4583e31)
