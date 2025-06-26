@@ -411,7 +411,7 @@ setup_project() {
 
     # Create .env.testnet.local using the loaded variables (fixed typo)
     echo "Creating environment file for $project_name..."
-    cat > .env.testnet.local << EOL
+    cat > .env.mainnet.local << EOL
 VLAYER_API_TOKEN=$VLAYER_API_TOKEN
 EXAMPLES_TEST_PRIVATE_KEY=$EXAMPLES_TEST_PRIVATE_KEY
 CHAIN_NAME=$CHAIN_NAME
@@ -419,12 +419,12 @@ JSON_RPC_URL=$JSON_RPC_URL
 EOL
 
     # Verify .env.testnet.local
-    echo "Debug: Contents of .env.testnet.local:"
-    cat .env.testnet.local
+    echo "Debug: Contents of .env.mainnet.local:"
+    cat .env.mainnet.local
 
     # Run prove:testnet
     echo "Running prove:testnet for $project_name..."
-    bun run prove:testnet
+    bun run prove:mainnet
 
     echo "✅ $project_name setup complete!"
     cd ~/Vlayer
