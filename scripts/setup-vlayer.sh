@@ -6,15 +6,81 @@ set -e
 # File to store API token and private key
 ENV_FILE="$HOME/Vlayer/.env"
 
-# Default values for chain and RPC (changed from base to sepolia)
-DEFAULT_CHAIN_NAME="sepolia"
-DEFAULT_JSON_RPC_URL="https://ethereum-sepolia.publicnode.com"
+# Default values for chain and RPC
+DEFAULT_CHAIN_NAME="base"
+DEFAULT_JSON_RPC_URL="https://base-rpc.publicnode.com"
 
 # Function to check and upgrade Ubuntu to 24.04
 upgrade_ubuntu() {
-    # ... (no changes in this section, same logic)
-    # Left unchanged for brevity
-    echo " Ubuntu is already at 24.04."
+    echo " Checking Ubuntu version..."
+    CURRENT_VERSION=$(lsb_release -sr)
+    echo "Current Ubuntu version: $CURRENT_VERSION"
+    if [[ "$CURRENT_VERSION" != "24.04" ]]; then
+        echo " Preparing to upgrade Ubuntu to 24.04 LTS..."
+        sudo dpkg --configure -a
+        sudo apt install -f -y
+        sudo apt autoremove -y
+        sudo apt autoclean
+        sudo apt purge -y python3-distutils python3-lib2to3 python3-apt python3-update-manager ubuntu-release-upgrader-core update-manager-core ubuntu-advantage-tools 2>/dev/null || true
+        sudo rm -rf /etc/apt/sources.list.d/* 2>/dev/null || true
+        sudo sed -i '/packages.microsoft.com/d' /etc/apt/sources.list 2>/dev/null || true
+        sudo sed -i '/repo.anaconda.com/d' /etc/apt/sources.list 2>/dev/null || true
+        sudo sed -i '/dl.yarnpkg.com/d' /etc/apt/sources.list 2>/dev/null || true
+        sudo sed -i '/packagecloud.io\/github\/git-lfs/d' /etc/apt/sources.list 2>/dev/null || true
+        sudo rm -rf /var/lib/apt/lists/*
+        sudo rm -f /var/lib/dpkg/lock-frontend /var/cache/apt/archives/lock
+        sudo dpkg --configure -a
+        sudo bash -c 'cat > /etc/apt/sources.list << EOL
+deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu noble-backports main restricted universe multiverse
+deb http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse
+EOL'
+        sudo apt clean
+        for attempt in {1..3}; do
+            if sudo apt update --fix-missing; then
+                break
+            else
+                sleep 2
+                if [ "$attempt" -eq 3 ]; then
+                    exit 1
+                fi
+            fi
+        done
+        sudo apt install -f -y
+        sudo mkdir -p /run/dbus
+        sudo dbus-daemon --system --fork || true
+        sudo debconf-set-selections <<< "postfix postfix/mailname string localhost"
+        sudo debconf-set-selections <<< "postfix postfix/main_mailer_type string 'No configuration'"
+        export DEBIAN_FRONTEND=noninteractive
+        sudo apt install -y -o Dpkg::Options::="--force-confnew" python3 python3-apt
+        sudo apt install -y -o Dpkg::Options::="--force-confnew" python3-update-manager ubuntu-release-upgrader-core
+        sudo apt install -y -o Dpkg::Options::="--force-confnew" update-manager-core dbus
+        sudo apt dist-upgrade -y
+        sudo mkdir -p /etc/update-manager
+        sudo bash -c 'cat > /etc/update-manager/release-upgrades << EOL
+[DEFAULT]
+Prompt=lts
+EOL'
+        sudo DEBIAN_FRONTEND=noninteractive do-release-upgrade -f DistUpgradeViewNonInteractive --allow-third-party || sudo apt full-upgrade -y
+        sudo apt update && sudo apt upgrade -y
+        sudo apt full-upgrade -y
+        NEW_VERSION=$(lsb_release -sr)
+        echo "New Ubuntu version: $NEW_VERSION"
+        if [[ "$NEW_VERSION" != "24.04" ]]; then
+            exit 1
+        fi
+        GLIBC_VERSION=$(ldd --version | head -n1 | awk '{print $NF}')
+        if [[ "$GLIBC_VERSION" < "2.39" ]]; then
+            exit 1
+        fi
+    else
+        GLIBC_VERSION=$(ldd --version | head -n1 | awk '{print $NF}')
+        if [[ "$GLIBC_VERSION" < "2.39" ]]; then
+            sudo apt-get install --reinstall -y libc6
+            sudo ldconfig
+        fi
+    fi
 }
 
 # Function to install dependencies
@@ -27,65 +93,43 @@ install_dependencies() {
         curl -L https://foundry.paradigm.xyz/ | bash
         [ -f ~/.bashrc ] && source ~/.bashrc
         [ -f ~/.profile ] && source ~/.profile
-        if ! command -v foundryup &> /dev/null; then
-            if [ -f ~/.foundry/bin/foundryup ]; then
-                export PATH="$HOME/.foundry/bin:$PATH"
-            else
-                echo "Error: foundryup installation failed."
-                exit 1
-            fi
-        fi
+        export PATH="$HOME/.foundry/bin:$PATH"
         foundryup
     fi
 
     if ! command -v bun &> /dev/null; then
         echo "Installing Bun..."
-        for attempt in {1..3}; do
-            if curl -fsSL https://bun.sh/install | bash; then
-                export PATH="$HOME/.bun/bin:$PATH"
-                echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc
-                echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.profile
-                if command -v bun &> /dev/null; then
-                    echo "Bun installed successfully."
-                    break
-                fi
-            fi
-            sleep 2
-        done
+        curl -fsSL https://bun.sh/install | bash
+        export PATH="$HOME/.bun/bin:$PATH"
+        echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc
     fi
 
     if ! command -v vlayer &> /dev/null; then
         echo "Installing vLayer CLI..."
-        for attempt in {1..2}; do
-            curl -SL https://install.vlayer.xyz/ | bash
-            [ -f ~/.bashrc ] && source ~/.bashrc
-            [ -f ~/.profile ] && source ~/.profile
-            if command -v vlayerup &> /dev/null; then
-                vlayerup
-                break
-            fi
-        done
+        curl -SL https://install.vlayer.xyz/ | bash
+        export PATH="$HOME/.vlayerup/bin:$HOME/.vlayer/bin:$PATH"
+        echo 'export PATH="$HOME/.vlayerup/bin:$HOME/.vlayer/bin:$PATH"' >> ~/.bashrc
+        source ~/.bashrc
+        vlayerup
     fi
-
-    echo " Dependencies installed."
 }
 
-# Function to set up .env file
 setup_env() {
     echo " Setting up environment file..."
     mkdir -p ~/Vlayer
     CHAIN_NAME=$DEFAULT_CHAIN_NAME
     JSON_RPC_URL=$DEFAULT_JSON_RPC_URL
+    VLAYER_API_TOKEN=""
+    EXAMPLES_TEST_PRIVATE_KEY=""
 
     if [ -f "$ENV_FILE" ]; then
-        echo "Existing .env file found at $ENV_FILE. Loading..."
         set -a
         source "$ENV_FILE"
         set +a
     else
-        echo "No .env file found. Please input details."
         read -p "Enter your vLayer API token: " VLAYER_API_TOKEN
-        read -p "Enter your test private key (0x...): " EXAMPLES_TEST_PRIVATE_KEY
+        read -p "Enter your test private key (e.g., 0x...): " EXAMPLES_TEST_PRIVATE_KEY
+
         cat > "$ENV_FILE" << EOL
 VLAYER_API_TOKEN=$VLAYER_API_TOKEN
 EXAMPLES_TEST_PRIVATE_KEY=$EXAMPLES_TEST_PRIVATE_KEY
@@ -96,16 +140,15 @@ EOL
         echo ".env" >> ~/Vlayer/.gitignore
     fi
 
-    if [ -z "$VLAYER_API_TOKEN" ] || [ -z "$EXAMPLES_TEST_PRIVATE_KEY" ]; then
-        echo "Missing variables. Check $ENV_FILE."
+    if [ -z "$VLAYER_API_TOKEN" ] || [ -z "$EXAMPLES_TEST_PRIVATE_KEY" ] || [ -z "$CHAIN_NAME" ] || [ -z "$JSON_RPC_URL" ]; then
+        echo "Missing required variables."
         exit 1
     fi
 }
 
-# Function to set up repo
 setup_repo() {
     echo " Setting up repository..."
-    if [ -d "~/Vlayer/.git" ]; then
+    if [ -d "$HOME/Vlayer/.git" ]; then
         cd ~/Vlayer && git pull origin main || true
     else
         rm -rf ~/Vlayer
@@ -114,14 +157,16 @@ setup_repo() {
     fi
 }
 
-# Function to set up a single vLayer project
 setup_project() {
     local project_dir=$1
     local template=$2
     local project_name=$3
+
     echo " Setting up $project_name..."
     mkdir -p "$project_dir"
     cd "$project_dir"
+
+    export PATH="$HOME/.vlayerup/bin:$HOME/.vlayer/bin:$PATH"
 
     if [ ! -f "foundry.toml" ]; then
         vlayer init --template "$template"
@@ -129,13 +174,8 @@ setup_project() {
 
     forge build
     cd vlayer
-
-    # Fix: trust packages before bun install
-    echo "Installing Bun dependencies..."
-    bun pm trust
     bun install
 
-    # Create .env.mainnet.local
     cat > .env.mainnet.local << EOL
 VLAYER_API_TOKEN=$VLAYER_API_TOKEN
 EXAMPLES_TEST_PRIVATE_KEY=$EXAMPLES_TEST_PRIVATE_KEY
@@ -143,25 +183,20 @@ CHAIN_NAME=$CHAIN_NAME
 JSON_RPC_URL=$JSON_RPC_URL
 EOL
 
-    echo "Debug: Contents of .env.mainnet.local:"
-    cat .env.mainnet.local
-
-    # Fix: check if script exists before running
+    echo "Running prove:mainnet for $project_name..."
     if bun run | grep -q "prove:mainnet"; then
-        echo "Running prove:mainnet for $project_name..."
-        bun run prove:mainnet
+        bun run prove:mainnet || echo "Warning: prove:mainnet failed"
     else
-        echo "Script prove:mainnet not found for $project_name. Skipping."
+        echo "Warning: No prove:mainnet script defined in package.json"
     fi
 
     cd ~/Vlayer
 }
 
-# Main function
 main() {
     PROJECT_TYPE="${1:-}"
     if [ -z "$PROJECT_TYPE" ]; then
-        read -p "Enter project type [default: all]: " PROJECT_TYPE
+        read -p "Enter project type to set up [default: all]: " PROJECT_TYPE
         PROJECT_TYPE="${PROJECT_TYPE:-all}"
     fi
 
@@ -198,8 +233,7 @@ main() {
 
     git add .
     git commit -m "Setup complete for $PROJECT_TYPE" || true
-    echo "All done! vLayer setup complete for $PROJECT_TYPE."
+    echo " All done! vLayer setup complete for $PROJECT_TYPE."
 }
 
-# Execute main
 main "$@"
